@@ -1,0 +1,25 @@
+{
+  "name": "opengarden-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @opengardenjs/playground dev",
+    "term": "pnpm --filter opengarden start",
+    "bench": "pnpm --filter @opengardenjs/bench bench",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check && node tools/layout/src/main.ts",
+    "fix": "biome check --write",
+    "check": "pnpm lint && pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "@types/node": "^26.6.5",
+    "@webgpu/types": "^0.1.74",
+    "typescript": "^7.0.2"
+  }
+}

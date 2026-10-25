@@ -1,0 +1,53 @@
+{
+  "name": "opengarden",
+  "version": "0.1.0",
+  "description": "Grow an opengarden tree in your terminal.",
+  "keywords": [
+    "opengarden",
+    "terminal",
+    "kitty",
+    "cli",
+    "tree"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/polo871209/opengarden/tree/main/packages/cli#readme",
+  "bugs": "https://github.com/polo871209/opengarden/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polo871209/opengarden.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "bin": {
+    "opengarden": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "@opengardenjs/source": "./src/main.ts",
+      "default": "./dist/main.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p .",
+    "start": "node --conditions=@opengardenjs/source src/main.ts"
+  },
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "dependencies": {
+    "@opengardenjs/cherry": "workspace:^",
+    "@opengardenjs/core": "workspace:^",
+    "@opengardenjs/terminal": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
+  }
+}

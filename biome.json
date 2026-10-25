@@ -1,0 +1,195 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["**", "!pnpm-lock.yaml", "!tools/bench/baseline.json"]
+  },
+  "html": {
+    "experimentalFullSupportEnabled": true
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUndeclaredDependencies": {
+          "level": "error",
+          "options": {
+            "devDependencies": false
+          }
+        },
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error",
+        "useImportExtensions": "error"
+      },
+      "suspicious": {
+        "noImportCycles": "error"
+      },
+      "style": {
+        "noDefaultExport": "error",
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error",
+        "useConst": "error",
+        "useNodejsImportProtocol": "error",
+        "useImportType": "error",
+        "useExportType": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../**"],
+                "message": "Import from this folder, or from another package by its name."
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/**", "tools/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": {
+              "level": "error",
+              "options": {
+                "devDependencies": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/src/**", "trees/*/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../**"],
+                    "message": "Import from this folder, or from another package by its name."
+                  },
+                  {
+                    "group": ["node:*"],
+                    "message": "The core and the trees run in browsers and in Node, so they use no Node modules."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "document": "The core and the trees have no DOM. Put DOM code in @opengardenjs/web.",
+                  "window": "The core and the trees have no DOM. Put DOM code in @opengardenjs/web.",
+                  "navigator": "The host passes in the GPU device.",
+                  "location": "The core and the trees have no DOM. Put DOM code in @opengardenjs/web.",
+                  "requestAnimationFrame": "The host runs the frame loop.",
+                  "OffscreenCanvas": "The host paints the atlas and passes it in.",
+                  "process": "The core and the trees run in browsers. Put Node code in @opengardenjs/terminal.",
+                  "Buffer": "The core and the trees run in browsers. Use Uint8Array."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/web/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../**"],
+                    "message": "Import from this folder, or from another package by its name."
+                  },
+                  {
+                    "group": ["node:*"],
+                    "message": "@opengardenjs/web runs in browsers."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "@opengardenjs/web runs in browsers.",
+                  "Buffer": "@opengardenjs/web runs in browsers. Use Uint8Array."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/terminal/src/**", "packages/cli/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "document": "The terminal runs in Node. Put DOM code in @opengardenjs/web.",
+                  "window": "The terminal runs in Node. Put DOM code in @opengardenjs/web.",
+                  "location": "The terminal runs in Node.",
+                  "requestAnimationFrame": "The terminal runs in Node."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/terminal/src/**", "tools/bench/src/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noControlCharactersInRegex": "off"
+          }
+        }
+      }
+    }
+  ]
+}

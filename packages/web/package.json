@@ -1,0 +1,44 @@
+{
+  "name": "@opengardenjs/web",
+  "version": "0.1.0",
+  "description": "Mounts an opengarden tree in a web page.",
+  "keywords": [
+    "opengarden",
+    "webgpu",
+    "procedural",
+    "tree",
+    "garden",
+    "browser"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/polo871209/opengarden/tree/main/packages/web#readme",
+  "bugs": "https://github.com/polo871209/opengarden/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polo871209/opengarden.git",
+    "directory": "packages/web"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@opengardenjs/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@opengardenjs/core": "workspace:^"
+  }
+}

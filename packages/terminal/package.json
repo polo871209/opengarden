@@ -1,0 +1,51 @@
+{
+  "name": "@opengardenjs/terminal",
+  "version": "0.1.0",
+  "description": "Runs an opengarden tree in a terminal through Dawn and the Kitty graphics protocol.",
+  "keywords": [
+    "opengarden",
+    "webgpu",
+    "terminal",
+    "kitty",
+    "dawn"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/polo871209/opengarden/tree/main/packages/terminal#readme",
+  "bugs": "https://github.com/polo871209/opengarden/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polo871209/opengarden.git",
+    "directory": "packages/terminal"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@opengardenjs/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p ."
+  },
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.13",
+    "@opengardenjs/core": "workspace:^",
+    "webgpu": "^0.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
+  }
+}

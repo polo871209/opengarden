@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["astro/client", "@webgpu/types"]
+  },
+  "include": ["src", "astro.config.ts"]
+}

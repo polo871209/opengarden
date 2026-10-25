@@ -1,0 +1,165 @@
+---
+import { Image } from "astro:assets";
+import { Code } from "astro:components";
+import poster from "#assets/poster.jpg";
+import Command from "#components/Command.astro";
+import "#styles/global.css";
+
+const repo = "https://github.com/polo871209/opengarden";
+const title = "opengarden · a procedural tree garden for WebGPU";
+const description =
+  "A procedural tree garden drawn with WebGPU. Move through the leaves and they fall. It runs in a web page and in a terminal.";
+
+const packages = [
+  {
+    name: "@opengardenjs/core",
+    path: "packages/core",
+    use: "The simulation and the WebGPU renderer. No DOM and no Node code.",
+  },
+  {
+    name: "@opengardenjs/web",
+    path: "packages/web",
+    use: "Mounts a garden in a web page.",
+  },
+  {
+    name: "@opengardenjs/terminal",
+    path: "packages/terminal",
+    use: "Runs a garden in a terminal through Dawn and Kitty graphics.",
+  },
+  {
+    name: "opengarden",
+    path: "packages/cli",
+    use: "The opengarden command.",
+  },
+  {
+    name: "@opengardenjs/cherry",
+    path: "trees/cherry",
+    use: "The cherry tree.",
+  },
+];
+
+const usage = `import { cherry } from "@opengardenjs/cherry";
+import { mountGarden } from "@opengardenjs/web";
+
+const host = document.getElementById("stage")!;
+const garden = await mountGarden(host, { species: cherry });
+garden.setSeason("winter");
+garden.newTree();`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={new URL(import.meta.env.BASE_URL, Astro.site)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(poster.src, Astro.site)} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="mark" href={import.meta.env.BASE_URL}>opengarden</a>
+      <nav>
+        <a href="#install">Install</a>
+        <a href="#packages">Packages</a>
+        <a href={repo}>GitHub</a>
+      </nav>
+    </header>
+
+    <section id="stage" class="stage" aria-label="Live garden">
+      <Image
+        src={poster}
+        alt="An opengarden cherry tree in autumn"
+        widths={[800, 1600]}
+        sizes="100vw"
+        loading="eager"
+        fetchpriority="high"
+      />
+      <p id="stage-note" class="note" hidden></p>
+      <div id="controls" class="controls" hidden>
+        <p class="hint">
+          move through the leaves and they fall · click to drop many
+        </p>
+        <div class="row">
+          <div id="seasons" class="keys"></div>
+          <button id="new-tree" type="button" class="key">New tree</button>
+        </div>
+      </div>
+    </section>
+
+    <main>
+      <section class="intro">
+        <h1>A procedural tree garden, drawn with WebGPU.</h1>
+        <p>
+          Move through the leaves and they fall. Click to drop many. Switch
+          between four seasons, or grow a new tree from a new seed. The same
+          renderer draws the garden in a web page and in a terminal that
+          supports the Kitty graphics protocol.
+        </p>
+      </section>
+
+      <section id="install" class="cards">
+        <article class="card">
+          <h2>Run it in a terminal</h2>
+          <Command command="npx opengarden" />
+          <p>
+            Keys <kbd>1</kbd> to <kbd>4</kbd> change the season, <kbd>n</kbd>
+            grows a new tree, and <kbd>q</kbd> quits. The terminal must support
+            Kitty graphics animation, for example Kitty or Rex.
+          </p>
+        </article>
+
+        <article class="card">
+          <h2>Put it in a web page</h2>
+          <Command command="npm install @opengardenjs/web @opengardenjs/cherry" />
+          <Code code={usage} lang="ts" theme="github-light" class="snippet" />
+          <p>
+            The browser must support WebGPU. The garden fills the host element,
+            so give the host a size.
+          </p>
+        </article>
+      </section>
+
+      <section id="packages" class="packages">
+        <h2>Install only the trees you show</h2>
+        <p>Each tree is its own package. The other packages are hosts for it.</p>
+        <ul>
+          {
+            packages.map(({ name, path, use }) => (
+              <li>
+                <a href={`${repo}/tree/main/${path}`}>
+                  <code>{name}</code>
+                </a>
+                <span>{use}</span>
+              </li>
+            ))
+          }
+        </ul>
+        <p>
+          To add a tree, write a <code>Species</code> from
+          <code>@opengardenjs/core</code>. It grows branches and leaves with a
+          <code>TreeBuilder</code> and gives a color set for each season. Start
+          from <a href={`${repo}/tree/main/trees/cherry`}><code>trees/cherry</code></a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <a href={repo}>github.com/polo871209/opengarden</a>
+      <span>MIT license</span>
+    </footer>
+
+    <script>
+      import "#scripts/garden.ts";
+    </script>
+  </body>
+</html>

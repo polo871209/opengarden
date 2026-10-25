@@ -1,0 +1,23 @@
+{
+  "name": "@opengardenjs/site",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#*": "./src/*"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@opengardenjs/cherry": "workspace:^",
+    "@opengardenjs/core": "workspace:^",
+    "@opengardenjs/web": "workspace:^",
+    "astro": "^7.4.2"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  }
+}

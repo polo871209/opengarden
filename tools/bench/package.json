@@ -1,0 +1,20 @@
+{
+  "name": "@opengardenjs/bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "node --conditions=@opengardenjs/source src/run.ts",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@opengardenjs/cherry": "workspace:^",
+    "@opengardenjs/core": "workspace:^",
+    "@opengardenjs/playground": "workspace:^",
+    "@opengardenjs/terminal": "workspace:^",
+    "@opengardenjs/web": "workspace:^",
+    "@types/node": "^26.6.5",
+    "opengarden": "workspace:^",
+    "playwright": "^1.64.1",
+    "vite": "^8.3.5"
+  }
+}

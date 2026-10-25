@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - trees/*
+  - apps/*
+  - tools/*
+
+allowBuilds:
+  webgpu: false

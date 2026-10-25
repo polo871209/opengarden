@@ -1,0 +1,45 @@
+{
+  "name": "@opengardenjs/core",
+  "version": "0.1.0",
+  "description": "The opengarden engine: a garden simulation and its WebGPU renderer, with no DOM and no Node.",
+  "keywords": [
+    "opengarden",
+    "webgpu",
+    "procedural",
+    "tree",
+    "garden"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/polo871209/opengarden/tree/main/packages/core#readme",
+  "bugs": "https://github.com/polo871209/opengarden/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polo871209/opengarden.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@opengardenjs/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@types/three": "^0.186.0",
+    "@webgpu/types": "^0.1.74",
+    "three": "^0.186.1"
+  }
+}
