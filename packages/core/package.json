@@ -1,6 +1,6 @@
 {
   "name": "@opengardenjs/core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The opengarden engine: a garden simulation and its WebGPU renderer, with no DOM and no Node.",
   "keywords": [
     "opengarden",

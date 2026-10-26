@@ -280,21 +280,21 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
     const run = async (capturer: Capturer, view: Garden) => {
       const interval = 1000 / fps;
       let due = performance.now();
-      let frameWaiting = false;
+      let simulated = due;
       while (!closing) {
-        if (frameWaiting) await showFrame(capturer);
-        if (closing) return;
         if (resized && size) {
           resized = false;
           applySize(capturer, view, size);
         }
-        frameWaiting = sized;
-        if (sized) capturer.render();
+        view.advance(Math.min(MAX_STEP_SECONDS, (due - simulated) / 1000));
+        simulated = due;
+        if (sized) {
+          capturer.render();
+          await showFrame(capturer);
+        }
         // A loop that sleeps a fixed time after each frame drifts to 58 fps, and then Rex freezes for up to 270 ms about once a second.
-        const next = Math.max(due + interval, performance.now());
-        view.advance(Math.min(MAX_STEP_SECONDS, (next - due) / 1000));
-        due = next;
-        await sleep(due - performance.now());
+        due = Math.max(due + interval, performance.now());
+        await sleep(Math.max(0, due - performance.now()));
       }
     };
 
