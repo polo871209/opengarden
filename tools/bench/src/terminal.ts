@@ -120,6 +120,11 @@ async function check(
   for (let frame = 0; frame < frames; frame++) {
     garden.advance(1 / 60);
     if (frame === 60) garden.newTree(Number(args.seed) + 1);
+    if (frame === 100) {
+      garden.pointerDown(width / 2 - 20, height / 2, false);
+      garden.pointerMove(width / 2 + 20, height / 2);
+      garden.pointerUp(width / 2 + 20, height / 2, false);
+    }
     capturer.render();
     const capture = await capturer.read();
     const { sequence } = screen.present(capture, frame === 0);

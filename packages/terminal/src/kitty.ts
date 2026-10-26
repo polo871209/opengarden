@@ -14,11 +14,6 @@ const ESC = "\x1b";
 const IMAGE_ID = 1;
 const OVERLAY_ID = 2;
 const COMMAND_COST = 12;
-/**
- * Above this share of the frame in edits, the whole image is cheaper. Rex
- * spends about 3.5 times as long per byte on an edit as on a whole image.
- */
-const WHOLE_IMAGE_SHARE = 0.3;
 
 interface Rect {
   x: number;
@@ -105,11 +100,12 @@ function coverChanges(
 }
 
 /**
- * Shows frames as one Kitty image that covers the terminal. A redraw, or a
- * frame that changes much of the screen, sends the whole image (`a=T`). Other
- * frames edit the changed rectangles in place (`a=f`). Pixels travel in a file
- * (`t=f`) that the terminal reads at an offset (`O`, `S`), so the escape codes
- * stay small.
+ * Shows frames as one Kitty image that covers the terminal. A redraw sends the
+ * whole image (`a=T`). Other frames edit the changed rectangles in place
+ * (`a=f`), even when the whole view changes, because Rex drops most frames
+ * when each one is a new image, for example while the view spins. Pixels
+ * travel in a file (`t=f`) that the terminal reads at an offset (`O`, `S`), so
+ * the escape codes stay small.
  */
 export function createKittyScreen(): KittyScreen {
   const directory = mkdtempSync("/tmp/opengarden-");
@@ -148,12 +144,6 @@ export function createKittyScreen(): KittyScreen {
     present(capture, full) {
       if (full) return sendWhole(capture);
       const rects = coverChanges(capture.dirty, capture.columns, capture.rows);
-      const area = rects.reduce(
-        (sum, rect) => sum + rect.width * rect.height,
-        0,
-      );
-      if (area > WHOLE_IMAGE_SHARE * capture.dirty.length)
-        return sendWhole(capture);
       let offset = 0;
       let sequence = "";
       for (const rect of rects) {
