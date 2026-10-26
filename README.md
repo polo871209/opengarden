@@ -1,6 +1,6 @@
 # opengarden
 
-A small procedural garden with one tree, drawn with WebGPU. Move through the leaves and they fall, click to drop many, and switch between four seasons. The same renderer runs in a web page and in a terminal that supports the Kitty graphics protocol.
+A small procedural garden with one tree, drawn with WebGPU, or with WebGL2 in browsers without WebGPU. Move through the leaves and they fall, click to drop many, and switch between four seasons. The same WebGPU renderer runs in a web page and in a terminal that supports the Kitty graphics protocol.
 
 ## Run it in a terminal
 
@@ -26,23 +26,23 @@ const garden = await mountGarden(document.getElementById("stage")!, {
 });
 ```
 
-The browser must support WebGPU. The garden fills the host element, so give the host a size.
+The browser must support WebGPU or WebGL2. The garden fills the host element, so give the host a size.
 
 ## Packages
 
 Each tree is its own package, so an app installs only the trees it shows.
 
-| Package                                       | Use                                                                     |
-| --------------------------------------------- | ----------------------------------------------------------------------- |
-| [`@opengardenjs/core`](packages/core)         | The simulation and the WebGPU renderer. It has no DOM and no Node code. |
-| [`@opengardenjs/web`](packages/web)           | Mounts a garden in a web page.                                          |
-| [`@opengardenjs/terminal`](packages/terminal) | Runs a garden in a terminal through Dawn and Kitty graphics.            |
-| [`opengarden`](packages/cli)                  | The `opengarden` command.                                               |
-| [`@opengardenjs/cherry`](trees/cherry)        | The cherry tree.                                                        |
+| Package                                       | Use                                                                                 |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [`@opengardenjs/core`](packages/core)         | The simulation and its WebGPU and WebGL2 renderers. It has no DOM and no Node code. |
+| [`@opengardenjs/web`](packages/web)           | Mounts a garden in a web page.                                                      |
+| [`@opengardenjs/terminal`](packages/terminal) | Runs a garden in a terminal through Dawn and Kitty graphics.                        |
+| [`opengarden`](packages/cli)                  | The `opengarden` command.                                                           |
+| [`@opengardenjs/cherry`](trees/cherry)        | The cherry tree.                                                                    |
 
 ## Add a tree
 
-A tree is a `Species` from `@opengardenjs/core`. It grows its branches and leaves with a `TreeBuilder`, and gives a color set for each season. Copy `trees/cherry` to `trees/<name>`, rename the package to `@opengardenjs/<name>`, and change `grow` and `looks`. `pnpm lint` fails if the new package is in the wrong place or depends on more than `@opengardenjs/core` and `three`.
+A tree is a `Species` from `@opengardenjs/core`. It grows its branches and leaves with a `TreeBuilder`, and gives a color set for each season. Copy `trees/cherry` to `trees/<name>`, rename the package to `@opengardenjs/<name>`, and change `grow` and `looks`. `pnpm lint` fails if the new package is in the wrong place or depends on anything but `@opengardenjs/core`. Build vectors with the `Vector3` that `@opengardenjs/core` exports.
 
 ## Develop
 

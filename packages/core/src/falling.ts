@@ -1,4 +1,4 @@
-import { Vector3 } from "three";
+import { Vector3 } from "./math.ts";
 import type { Rng } from "./rng.ts";
 import { type MoundShape, moundHeight } from "./world.ts";
 

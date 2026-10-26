@@ -6,8 +6,6 @@ export const WIND_DIR: readonly [number, number] = (() => {
 })();
 export const GROW_WIDTH = 0.12;
 export const REGROW_AFTER = 18;
-export const LEAF_SCALE = 0.16;
-export const SHADOW_SIZE = 2048;
 
 export interface MoundShape {
   radius: number;

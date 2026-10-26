@@ -1,29 +1,46 @@
 import {
   ATLAS_HEIGHT,
   ATLAS_WIDTH,
-  createGarden,
+  type Colors,
+  type Garden,
+  type GardenOptions,
   paintLeafAtlas,
-  type SceneColors,
+  type Quality,
   type Season,
   type Species,
 } from "@opengardenjs/core";
 import { addStyle, createControls } from "./controls.ts";
 
-export interface MountOptions {
+export type RendererName = "webgpu" | "webgl";
+
+export interface MountOptions extends Colors {
   species: Species;
   seed?: number;
   season?: Season;
   /** Shows the hint and the season and new tree buttons. Defaults to false. */
   controls?: boolean;
-  /** Replaces these scene colors in every season. `ground` is also the color behind the garden. */
-  scene?: Partial<SceneColors>;
   /** Moves the tree right by this share of the canvas width. Negative moves it left. Defaults to 0. */
   offsetX?: number;
+  /**
+   * The GPU API to draw with. `auto` takes WebGPU if the browser has it, and
+   * WebGL2 if not. Defaults to `auto`.
+   */
+  renderer?: "auto" | RendererName;
+  /** Trades looks for speed on slow GPUs. Defaults to full quality. */
+  quality?: Quality;
+  /** Draws at this share of the screen resolution, and scales the image up. Defaults to 1. */
+  renderScale?: number;
+  /** Draws at most this many frames per second. Defaults to the display rate. */
+  maxFps?: number;
 }
 
 /** A garden that runs in a canvas inside the host element. */
 export interface MountedGarden {
+  /** The GPU API that draws the garden. */
+  readonly renderer: RendererName;
   setSeason(season: Season): void;
+  /** Replaces the colors from the options, with the same wipe as a season change. */
+  setColors(colors: Colors): void;
   /** Moves the tree right by this share of the canvas width. Negative moves it left. */
   setOffsetX(share: number): void;
   /** Blows the tree away and grows a new one from `seed`, or from a random seed. */
@@ -48,20 +65,81 @@ function paintAtlas() {
   return ctx.getImageData(0, 0, ATLAS_WIDTH, ATLAS_HEIGHT);
 }
 
-/** Adds a canvas to `host`, fills it with a garden and starts it. Needs WebGPU. */
-export async function mountGarden(
-  host: HTMLElement,
-  options: MountOptions,
-): Promise<MountedGarden> {
-  if (!navigator.gpu) throw new Error("This browser does not support WebGPU.");
-  const adapter = await navigator.gpu.requestAdapter({
+async function webgpuAdapter(required: boolean) {
+  const adapter = await navigator.gpu?.requestAdapter({
     powerPreference: "high-performance",
   });
-  if (!adapter) throw new Error("This browser found no WebGPU adapter.");
+  if (adapter || !required) return adapter ?? undefined;
+  throw new Error(
+    navigator.gpu
+      ? "This browser found no WebGPU adapter."
+      : "This browser does not support WebGPU.",
+  );
+}
+
+interface Drawing {
+  renderer: RendererName;
+  garden: Omit<Garden, "render">;
+  draw(): void;
+  release(): void;
+}
+
+async function startWebGPU(
+  canvas: HTMLCanvasElement,
+  adapter: GPUAdapter,
+  options: GardenOptions,
+): Promise<Drawing> {
   const device = await adapter.requestDevice();
   void device.lost.then((info) => {
     if (info.reason !== "destroyed") console.error("WebGPU device lost", info);
   });
+  const context = canvas.getContext("webgpu");
+  if (!context) throw new Error("The canvas has no WebGPU context.");
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: "opaque" });
+  const { createGarden } = await import("@opengardenjs/core/webgpu");
+  const garden = createGarden(device, format, options);
+  return {
+    renderer: "webgpu",
+    garden,
+    draw: () => garden.render(context.getCurrentTexture().createView()),
+    release: () => device.destroy(),
+  };
+}
+
+async function startWebGL(
+  canvas: HTMLCanvasElement,
+  options: GardenOptions,
+): Promise<Drawing> {
+  const gl = canvas.getContext("webgl2", {
+    alpha: false,
+    antialias: options.quality?.antialias ?? true,
+    depth: true,
+    stencil: false,
+    powerPreference: "high-performance",
+  });
+  if (!gl) throw new Error("This browser supports neither WebGPU nor WebGL2.");
+  const { createWebGLGarden } = await import("@opengardenjs/core/webgl");
+  const garden = createWebGLGarden(gl, options);
+  return {
+    renderer: "webgl",
+    garden,
+    draw: () => garden.render(),
+    release: () => gl.getExtension("WEBGL_lose_context")?.loseContext(),
+  };
+}
+
+/**
+ * Adds a canvas to `host`, fills it with a garden and starts it. Draws with
+ * WebGPU if the browser has it, and with WebGL2 if not.
+ */
+export async function mountGarden(
+  host: HTMLElement,
+  options: MountOptions,
+): Promise<MountedGarden> {
+  const choice = options.renderer ?? "auto";
+  const adapter =
+    choice === "webgl" ? undefined : await webgpuAdapter(choice === "webgpu");
 
   addStyle();
   const root = document.createElement("div");
@@ -69,20 +147,30 @@ export async function mountGarden(
   const canvas = document.createElement("canvas");
   root.append(canvas);
   host.append(root);
-  const context = canvas.getContext("webgpu");
-  if (!context) throw new Error("The canvas has no WebGPU context.");
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: "opaque" });
 
-  const garden = createGarden(device, format, {
+  const gardenOptions: GardenOptions = {
     species: options.species,
     seed: options.seed,
     season: options.season,
     atlas: paintAtlas(),
+    trees: options.trees,
     scene: options.scene,
     offsetX: options.offsetX,
-  });
-  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    quality: options.quality,
+  };
+  let drawing: Drawing;
+  try {
+    drawing = adapter
+      ? await startWebGPU(canvas, adapter, gardenOptions)
+      : await startWebGL(canvas, gardenOptions);
+  } catch (error) {
+    root.remove();
+    throw error;
+  }
+  const { garden, draw } = drawing;
+  const pixelRatio =
+    Math.min(window.devicePixelRatio || 1, 2) * (options.renderScale ?? 1);
+  const frameGap = options.maxFps ? (0.9 * 1000) / options.maxFps : 0;
 
   const resize = () => {
     canvas.width = Math.max(1, Math.floor(root.clientWidth * pixelRatio));
@@ -93,11 +181,12 @@ export async function mountGarden(
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(root);
 
-  const draw = () => garden.render(context.getCurrentTexture().createView());
-
   const local = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
-    return [event.clientX - rect.left, event.clientY - rect.top] as const;
+    return [
+      ((event.clientX - rect.left) * canvas.clientWidth) / rect.width,
+      ((event.clientY - rect.top) * canvas.clientHeight) / rect.height,
+    ] as const;
   };
   const onPointerDown = (event: PointerEvent) => {
     garden.pointerDown(...local(event), event.pointerType !== "mouse");
@@ -135,6 +224,7 @@ export async function mountGarden(
   let frame = 0;
   const loop = (now: number) => {
     frame = requestAnimationFrame(loop);
+    if (now - last < frameGap) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (!visible || frozen) return;
@@ -153,7 +243,9 @@ export async function mountGarden(
     [x * canvas.clientWidth, y * canvas.clientHeight] as const;
 
   return {
+    renderer: drawing.renderer,
     setSeason,
+    setColors: (colors) => garden.setColors(colors),
     setOffsetX: (share) => garden.setOffsetX(share),
     newTree: (seed) => garden.newTree(seed),
     dispose() {
@@ -161,7 +253,7 @@ export async function mountGarden(
       resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       garden.dispose();
-      device.destroy();
+      drawing.release();
       root.remove();
     },
     debug: {

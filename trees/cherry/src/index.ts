@@ -4,8 +4,8 @@ import {
   type TreeBuilder,
   tilt,
   tip,
+  Vector3,
 } from "@opengardenjs/core";
-import { Vector3 } from "three";
 
 const TAU = Math.PI * 2;
 const LEAVES = 54;

@@ -1,4 +1,4 @@
-import { Vector3 } from "three";
+import { Vector3 } from "./math.ts";
 
 export type Season = "spring" | "summer" | "autumn" | "winter";
 export const SEASONS: readonly Season[] = [
@@ -34,6 +34,19 @@ export interface SceneColors {
   rock: string;
   rockShade: string;
   sun: string;
+  /** Snow on bark and stones in winter. */
+  snow: string;
+}
+
+/** Colors that replace the species' and the garden's own. */
+export interface Colors {
+  /** Replaces the species' tree look in these seasons. */
+  trees?: Partial<Record<Season, TreeLook>>;
+  /**
+   * Replaces these scene colors in every season, or in each season that the
+   * function is called with. `ground` is also the color behind the garden.
+   */
+  scene?: Partial<SceneColors> | ((season: Season) => Partial<SceneColors>);
 }
 
 const SCENE: Record<Season, SceneColors> = {
@@ -48,6 +61,7 @@ const SCENE: Record<Season, SceneColors> = {
     rock: "#ddd2e4",
     rockShade: "#9a92b4",
     sun: "#fff6f2",
+    snow: "#f4f9fc",
   },
   summer: {
     ground: "#c3effe",
@@ -60,6 +74,7 @@ const SCENE: Record<Season, SceneColors> = {
     rock: "#cfe2ea",
     rockShade: "#86a2b4",
     sun: "#fffbe8",
+    snow: "#f4f9fc",
   },
   autumn: {
     ground: "#fff8df",
@@ -72,6 +87,7 @@ const SCENE: Record<Season, SceneColors> = {
     rock: "#ece2cc",
     rockShade: "#a89a8c",
     sun: "#fff4dc",
+    snow: "#f4f9fc",
   },
   winter: {
     ground: "#3a8fcb",
@@ -84,6 +100,7 @@ const SCENE: Record<Season, SceneColors> = {
     rock: "#d6e2ec",
     rockShade: "#7e9cbc",
     sun: "#ffffff",
+    snow: "#f4f9fc",
   },
 };
 
@@ -157,6 +174,6 @@ export function lookFor(
     rockShade: hexToVector(scene.rockShade),
     sun: hexToVector(scene.sun),
     snow: season === "winter" ? 1 : 0,
-    snowColor: hexToVector("#f4f9fc"),
+    snowColor: hexToVector(scene.snow),
   };
 }

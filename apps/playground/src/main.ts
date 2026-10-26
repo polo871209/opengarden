@@ -13,6 +13,7 @@ try {
     seed: Number(params.get("seed")) || undefined,
     season: SEASONS.find((season) => season === params.get("season")),
     controls: params.get("controls") === "1",
+    renderer: params.get("renderer") === "webgl" ? "webgl" : "auto",
   });
   if (import.meta.env.DEV) Object.assign(window, { garden });
 } catch (error) {

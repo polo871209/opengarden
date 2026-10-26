@@ -1,43 +1,18 @@
 import { ATLAS_CELL, ATLAS_CELLS } from "./look.ts";
+import type { Settings } from "./quality.ts";
+import { f, SHADOW_RADIUS_TEXELS } from "./uniforms.ts";
 import {
   GROW_WIDTH,
-  LEAF_SCALE,
   MOUND,
   REGROW_AFTER,
-  SHADOW_SIZE,
   SUN_DIR,
   WIND,
   WIND_DIR,
   WIND_SPEED,
 } from "./world.ts";
 
-const f = (n: number) => (Number.isInteger(n) ? `${n}.0` : String(n));
-
-/** Floats in the `Camera` uniform. */
-export const CAMERA_FLOATS = 24;
-/** Floats in the `Frame` uniform. */
-export const FRAME_FLOATS = 52;
-/** Floats in the `Look` uniform. */
-export const LOOK_FLOATS = 80;
-/** Floats in the `Draw` uniform. */
-export const DRAW_FLOATS = 20;
-/** Float offsets of the `Frame` fields that change every frame. */
-export const FRAME = {
-  shadowMatrix: 0,
-  stones: 16,
-  time: 40,
-  treeHeight: 41,
-  grow: 42,
-  blow: 43,
-  fade: 44,
-  stoneCount: 45,
-  wipe: 46,
-  origin: 48,
-  aspect: 50,
-} as const;
 export const SHADOW_TILE = 8;
 
-const SHADOW_RADIUS_TEXELS = 2.2 * 1.4;
 const BILINEAR_REACH = 0.6;
 const SHADOW_REACH = SHADOW_RADIUS_TEXELS + BILINEAR_REACH;
 if (2 * SHADOW_REACH >= SHADOW_TILE)
@@ -70,7 +45,36 @@ const fullscreen = /* wgsl */ `
 }
 `;
 
-export const sceneShader = /* wgsl */ `
+function sunlight(name: string, samples: number): string {
+  const lookup =
+    samples === 1
+      ? "return textureSampleCompareLevel(shadowMap, shadowSampler, c.xy, depth);"
+      : `var lit = 0.0;
+  for (var i = 0; i < ${samples}; i++) {
+    lit += textureSampleCompareLevel(shadowMap, shadowSampler, c.xy + POISSON[i] * SHADOW_RADIUS, depth);
+  }
+  return lit / ${f(samples)};`;
+  return /* wgsl */ `
+fn ${name}(coord: vec4f, bias: f32) -> f32 {
+  let ndc = coord.xyz / coord.w;
+  let c = vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) {
+    return 1.0;
+  }
+  let depth = c.z - bias;
+  let occluders = occluderRange(c.xy * SHADOW_SIZE);
+  if (depth <= occluders.x) {
+    return 1.0;
+  }
+  if (depth > occluders.y) {
+    return 0.0;
+  }
+  ${lookup}
+}
+`;
+}
+
+export const sceneShader = (settings: Settings): string => /* wgsl */ `
 ${frame}
 
 struct Camera {
@@ -133,17 +137,17 @@ const WIND_DIR = vec2f(${f(WIND_DIR[0])}, ${f(WIND_DIR[1])});
 const SUN_DIR = vec3f(${SUN_DIR.map(f).join(", ")});
 const GROW_WIDTH = ${f(GROW_WIDTH)};
 const REGROW = ${f(REGROW_AFTER)};
-const LEAF_SCALE = ${f(LEAF_SCALE)};
+const LEAF_SCALE = ${f(settings.leafScale)};
 const MOSS_SCALE = 0.15;
 const CROWN_VARY = 0.22;
 const MOSS_VARY = 0.3;
 const ATLAS_CELLS = ${f(ATLAS_CELLS)};
 const DAB_CELL = ${f(ATLAS_CELL.dab)};
-const SHADOW_SIZE = ${f(SHADOW_SIZE)};
-const SHADOW_RADIUS = ${f(SHADOW_RADIUS_TEXELS / SHADOW_SIZE)};
+const SHADOW_SIZE = ${f(settings.shadowSize)};
+const SHADOW_RADIUS = ${f(SHADOW_RADIUS_TEXELS / settings.shadowSize)};
 const SHADOW_REACH = ${f(SHADOW_REACH)};
 const SHADOW_TILE = ${SHADOW_TILE};
-const SHADOW_TILES = ${SHADOW_SIZE / SHADOW_TILE};
+const SHADOW_TILES = ${settings.shadowSize / SHADOW_TILE};
 const SHADOW_STRENGTH = 0.8;
 const MOUND_RADIUS = ${f(MOUND.radius)};
 const MOUND_HEIGHT = ${f(MOUND.height)};
@@ -187,26 +191,8 @@ fn occluderRange(texel: vec2f) -> vec2f {
   return vec2f(min(min(a.x, b.x), min(c.x, d.x)), max(max(a.y, b.y), max(c.y, d.y)));
 }
 
-fn sunlight(coord: vec4f, bias: f32) -> f32 {
-  let ndc = coord.xyz / coord.w;
-  let c = vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
-  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) {
-    return 1.0;
-  }
-  let depth = c.z - bias;
-  let occluders = occluderRange(c.xy * SHADOW_SIZE);
-  if (depth <= occluders.x) {
-    return 1.0;
-  }
-  if (depth > occluders.y) {
-    return 0.0;
-  }
-  var lit = 0.0;
-  for (var i = 0; i < 16; i++) {
-    lit += textureSampleCompareLevel(shadowMap, shadowSampler, c.xy + POISSON[i] * SHADOW_RADIUS, depth);
-  }
-  return lit / 16.0;
-}
+${sunlight("sunlight", settings.shadowSamples)}
+${sunlight("leafSunlight", settings.leafShadowSamples)}
 
 fn dithered(color: vec3f, position: vec4f) -> vec3f {
   return color + (hash12(position.xy) - 0.5) / 255.0;
@@ -330,12 +316,19 @@ struct LeafOut {
 @fragment fn leafFragment(in: LeafOut) -> @location(0) vec4f {
   let moss = draw.variant > 0.5;
   let tex = atlasTexel(in.shape, in.uv);
-  let alpha = crispAlpha(tex.a);
+${
+  settings.antialias
+    ? `  let alpha = crispAlpha(tex.a);
   if (alpha < 0.02) {
     discard;
-  }
+  }`
+    : `  let alpha = 1.0;
+  if (tex.a < 0.5) {
+    discard;
+  }`
+}
   let n = normalize(in.normal);
-  let sun = sunlight(in.shadowCoord, 0.0025);
+  let sun = leafSunlight(in.shadowCoord, 0.0025);
   var light = 0.06 + 0.94 * smoothstep(-0.35, 0.7, dot(n, SUN_DIR));
   light *= mix(0.5, 1.0, sun);
   light *= mix(0.45, 1.0, smoothstep(0.2, 0.98, in.exposure));
@@ -589,7 +582,7 @@ struct FallOut {
     let shade = mix(0.82 + 0.18 * in.flip, 0.9, in.landed);
     color = base * shade * mix(0.88, 1.0, tex.r);
   } else {
-    let sun = sunlight(in.shadowCoord, 0.0025);
+    let sun = leafSunlight(in.shadowCoord, 0.0025);
     var k = 0.5 + (in.rnd - 0.5) * 0.7 + (tex.r - 0.9) * 0.6 + (in.flip - 0.5) * 0.25 * (1.0 - in.landed);
     k = clamp(k, 0.0, 1.0) * mix(0.55, 1.0, sun * mix(1.0, 0.9, in.landed));
     color = rampColor(look.crown, k);
@@ -598,7 +591,7 @@ struct FallOut {
 }
 `;
 
-export const shadowRangeShader = /* wgsl */ `
+export const shadowRangeShader = (settings: Settings): string => /* wgsl */ `
 @group(0) @binding(0) var shadowMap: texture_depth_2d;
 @group(0) @binding(1) var nearest: sampler;
 
@@ -610,7 +603,7 @@ ${fullscreen}
   var far = 0.0;
   for (var y = 1.0; y < ${f(SHADOW_TILE)}; y += 2.0) {
     for (var x = 1.0; x < ${f(SHADOW_TILE)}; x += 2.0) {
-      let depths = textureGather(shadowMap, nearest, (corner + vec2f(x, y)) / ${f(SHADOW_SIZE)});
+      let depths = textureGather(shadowMap, nearest, (corner + vec2f(x, y)) / ${f(settings.shadowSize)});
       near = min(near, min(min(depths.x, depths.y), min(depths.z, depths.w)));
       far = max(far, max(max(depths.x, depths.y), max(depths.z, depths.w)));
     }

@@ -24,7 +24,6 @@ import {
 
 const ESC = "\x1b";
 const FORMAT = "rgba8unorm";
-const FRAME_INTERVAL_MS = 1000 / 60;
 const MAX_STEP_SECONDS = 0.1;
 const FENCE_TIMEOUT_MS = 500;
 const FENCE_ID = 3;
@@ -45,6 +44,8 @@ export interface TerminalOptions {
   controls?: boolean;
   /** Rendered pixels per screen pixel, above 0 and at most 2. Defaults to 1. */
   pixelRatio?: number;
+  /** Frames per second, a whole number from 1 to 120. Defaults to 60. */
+  fps?: number;
   /** Receives a line for each event, and a line of frame stats each second. */
   log?: (line: string) => void;
 }
@@ -82,6 +83,9 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
   const pixelRatio = options.pixelRatio ?? 1;
   if (!(pixelRatio > 0 && pixelRatio <= 2))
     throw new Error("pixelRatio must be above 0 and at most 2");
+  const fps = options.fps ?? 60;
+  if (!(Number.isInteger(fps) && fps >= 1 && fps <= 120))
+    throw new Error("fps must be a whole number from 1 to 120");
   const log = options.log ?? (() => {});
 
   return new Promise((resolve, reject) => {
@@ -235,6 +239,10 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
       const full = redraw;
       redraw = false;
       const capture = await capturer.read();
+      if (closing) {
+        capture.release();
+        return;
+      }
       const frame = screen.present(capture, full);
       const hex = (i: number) => capture.rgb[i].toString(16).padStart(2, "0");
       const color = `rgb:${hex(0)}/${hex(1)}/${hex(2)}`;
@@ -270,22 +278,23 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
     };
 
     const run = async (capturer: Capturer, view: Garden) => {
-      let last = performance.now();
+      const interval = 1000 / fps;
+      let due = performance.now();
       let frameWaiting = false;
       while (!closing) {
-        const started = performance.now();
         if (frameWaiting) await showFrame(capturer);
-        view.advance(Math.min(MAX_STEP_SECONDS, (started - last) / 1000));
-        last = started;
+        if (closing) return;
         if (resized && size) {
           resized = false;
           applySize(capturer, view, size);
         }
         frameWaiting = sized;
         if (sized) capturer.render();
-        await sleep(
-          Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)),
-        );
+        // A loop that sleeps a fixed time after each frame drifts to 58 fps, and then Rex freezes for up to 270 ms about once a second.
+        const next = Math.max(due + interval, performance.now());
+        view.advance(Math.min(MAX_STEP_SECONDS, (next - due) / 1000));
+        due = next;
+        await sleep(due - performance.now());
       }
     };
 
@@ -296,20 +305,18 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
       graphics: onGraphics,
     });
     let statsTimer: NodeJS.Timeout | undefined;
+    let running: Promise<void> | undefined;
 
-    const restoreTerminalIfOpen = () => {
-      try {
-        write(screen.clear());
-        closeTerminal();
-      } catch {}
-    };
-
-    function shutdown(error?: unknown) {
+    async function shutdown(error?: unknown) {
       if (closing) return;
       closing = true;
       clearInterval(statsTimer);
+      await running?.catch(() => {});
+      try {
+        write(screen.clear());
+      } catch {}
+      await closeTerminal();
       for (const signal of SIGNALS) process.off(signal, onSignal);
-      restoreTerminalIfOpen();
       garden?.dispose();
       device?.destroy();
       screen.dispose();
@@ -368,7 +375,8 @@ export function runInTerminal(options: TerminalOptions): Promise<void> {
         });
       }, 1000);
 
-      await run(createCapturer(gpu, view, FORMAT), view);
+      running = run(createCapturer(gpu, view, FORMAT), view);
+      await running;
     };
 
     start().catch(shutdown);

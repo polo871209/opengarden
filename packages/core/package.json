@@ -1,6 +1,6 @@
 {
   "name": "@opengardenjs/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The opengarden engine: a garden simulation and its WebGPU renderer, with no DOM and no Node.",
   "keywords": [
     "opengarden",
@@ -24,6 +24,16 @@
       "@opengardenjs/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./webgpu": {
+      "@opengardenjs/source": "./src/webgpu.ts",
+      "types": "./dist/webgpu.d.ts",
+      "default": "./dist/webgpu.js"
+    },
+    "./webgl": {
+      "@opengardenjs/source": "./src/webgl.ts",
+      "types": "./dist/webgl.d.ts",
+      "default": "./dist/webgl.js"
     }
   },
   "files": [
@@ -37,9 +47,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p ."
   },
-  "dependencies": {
-    "@types/three": "^0.186.0",
-    "@webgpu/types": "^0.1.74",
-    "three": "^0.186.1"
+  "devDependencies": {
+    "@webgpu/types": "^0.1.74"
   }
 }

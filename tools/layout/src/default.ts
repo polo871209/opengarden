@@ -69,7 +69,7 @@ export const defaultLayout = defineLayout({
       ...publishedRules,
       keyword("opengarden-tree"),
       exactPeers(["@opengardenjs/core"]),
-      onlyDependencies(["three", "@types/three"]),
+      onlyDependencies([]),
     ],
     apps: privateRules,
     tools: privateRules,

@@ -1,16 +1,6 @@
-import {
-  type Camera,
-  MathUtils,
-  Matrix4,
-  OrthographicCamera,
-  PerspectiveCamera,
-  Raycaster,
-  Vector2,
-  Vector3,
-  WebGPUCoordinateSystem,
-} from "three";
 import { FallingLeaves, type FallKind } from "./falling.ts";
-import { type Look, lookFor, type SceneColors, type Season } from "./look.ts";
+import { type Colors, type Look, lookFor, type Season } from "./look.ts";
+import { Camera, clamp, radians, Vector3 } from "./math.ts";
 import {
   createBarkMesh,
   createLeafInstances,
@@ -19,10 +9,12 @@ import {
   placeStones,
   scatterMoss,
 } from "./meshes.ts";
-import { createRenderer, type Image } from "./renderer.ts";
+import { type Quality, settle } from "./quality.ts";
+import type { Image, Renderer, SceneSetup } from "./renderer.ts";
 import { createRng } from "./rng.ts";
-import { CAMERA_FLOATS, FRAME, FRAME_FLOATS } from "./shaders.ts";
 import { growTree, type Species, type Tree } from "./tree.ts";
+import { CAMERA_FLOATS, FRAME, FRAME_FLOATS } from "./uniforms.ts";
+import type { WebGPUTarget } from "./webgpu.ts";
 import {
   MOUND,
   moundHeight,
@@ -40,30 +32,32 @@ const GROW_TIME = 1.7;
 const BLOW_TIME = 0.55;
 const WIPE_TIME = 0.85;
 const TILT = 11;
-const FALL_CAPACITY = 6000;
 const STEP_SECONDS = 1 / 60;
 
-export interface GardenOptions {
+export interface GardenOptions extends Colors {
   species: Species;
   seed?: number;
   season?: Season;
   /** The leaf shapes that `paintLeafAtlas` paints. */
   atlas: Image;
-  /** Replaces these scene colors in every season. */
-  scene?: Partial<SceneColors>;
   /** Moves the tree right by this share of the image width. Negative moves it left. Defaults to 0. */
   offsetX?: number;
+  /** Trades looks for speed. Defaults to full quality. */
+  quality?: Quality;
 }
 
 /**
- * The garden simulation and its WebGPU renderer, with no DOM. Positions are
- * CSS pixels from the top left of the rendered image.
+ * The garden simulation and its renderer, with no DOM. Positions are CSS
+ * pixels from the top left of the rendered image. `Target` is what `render`
+ * draws into.
  */
-export interface Garden {
+export interface GardenOf<Target extends unknown[]> {
   readonly season: Season;
   /** True if the pointer is over leaves that it can knock down. */
   readonly overLeaves: boolean;
   setSeason(season: Season): void;
+  /** Replaces the colors from the options, with the same wipe as a season change. */
+  setColors(colors: Colors): void;
   newTree(seed?: number): void;
   /** Sets the size of the render target, and how many of its pixels make one CSS pixel. */
   resize(width: number, height: number, pixelRatio: number): void;
@@ -73,11 +67,8 @@ export interface Garden {
   update(seconds: number): void;
   /** Moves time forward by `seconds`, in steps of at most 1/60 second. */
   advance(seconds: number): void;
-  /**
-   * Renders into a texture of the format that the garden was created with.
-   * Records into `encoder` if there is one, and submits its own commands if not.
-   */
-  render(target: GPUTextureView, encoder?: GPUCommandEncoder): void;
+  /** Renders one frame into `target`. */
+  render(...target: Target): void;
   pointerDown(x: number, y: number, touch: boolean): void;
   pointerMove(x: number, y: number): void;
   /** `cancelled` is true if the press ended without a release, so it is not a click. */
@@ -95,50 +86,58 @@ function easeInOutCubic(x: number): number {
 }
 
 function packCamera(camera: Camera, out: Float32Array): Float32Array {
-  new Matrix4()
-    .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-    .toArray(out, 0);
-  new Vector3().setFromMatrixColumn(camera.matrixWorld, 0).toArray(out, 16);
-  new Vector3().setFromMatrixColumn(camera.matrixWorld, 1).toArray(out, 20);
+  camera.viewProjection(out);
+  camera.right.toArray(out, 16);
+  camera.up.toArray(out, 20);
   return out;
 }
 
-export function createGarden(
-  device: GPUDevice,
-  format: GPUTextureFormat,
+/**
+ * A garden that WebGPU draws. `render` draws into a texture of `format`. It
+ * records into `encoder` if there is one, and submits its own commands if not.
+ */
+export type Garden = GardenOf<WebGPUTarget>;
+
+/** A garden that WebGL2 draws. `render` draws into the canvas of the context. */
+export type WebGLGarden = GardenOf<[]>;
+
+/** The simulation that both backends share. Apps call `createGarden` or `createWebGLGarden` instead. */
+export function createSimulation<Target extends unknown[]>(
   options: GardenOptions,
-): Garden {
-  const windDir = new Vector2(...WIND_DIR);
-  const camera = new PerspectiveCamera(30, 1, 0.1, 200);
-  camera.coordinateSystem = WebGPUCoordinateSystem;
-  const sunCamera = new OrthographicCamera(-8.5, 8.5, 8.5, -8.5, 1, 60);
-  sunCamera.coordinateSystem = WebGPUCoordinateSystem;
-  sunCamera.updateProjectionMatrix();
+  createRenderer: (setup: SceneSetup) => Renderer<Target>,
+): GardenOf<Target> {
+  const settings = settle(options.quality);
+  const windDir = { x: WIND_DIR[0], y: WIND_DIR[1] };
+  const fov = radians(30);
+  let aspect = 1;
+  const camera = new Camera();
+  const sunCamera = new Camera();
+  sunCamera.orthographic(8.5, 1, 60);
 
   const gardenRng = createRng(7919 * (options.seed ?? 7) + 13);
   const moss = createLeafInstances(scatterMoss(MOUND, gardenRng, 2400));
   const stones = placeStones(MOUND, gardenRng, 3);
-  const renderer = createRenderer(device, format, {
+  const renderer = createRenderer({
+    settings,
     atlas: options.atlas,
     moss,
     solids: [
       {
         mesh: createMoundMesh(MOUND),
-        model: new Matrix4().elements,
+        model: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         variant: 0,
       },
       ...stones.map((stone) => ({
         mesh: stone.mesh,
-        model: stone.model.elements,
+        model: stone.model,
         variant: 1,
       })),
     ],
-    fallCapacity: FALL_CAPACITY,
   });
 
   const frame = new Float32Array(FRAME_FLOATS);
   for (const [i, stone] of stones.entries())
-    stone.footprint.toArray(frame, FRAME.stones + 4 * i);
+    frame.set(stone.footprint, FRAME.stones + 4 * i);
   frame[FRAME.stoneCount] = stones.length;
   const eyeData = new Float32Array(CAMERA_FLOATS);
   const sunData = new Float32Array(CAMERA_FLOATS);
@@ -153,7 +152,7 @@ export function createGarden(
   let fade = 0;
 
   const buildTree = () => {
-    tree = growTree(options.species, seed);
+    tree = growTree(options.species, seed, settings.leafDensity);
     renderer.setTree(createBarkMesh(tree), createLeafInstances(tree.leaves));
     gone = new Float32Array(tree.leaves.length).fill(NEVER);
     goneDirty = false;
@@ -161,11 +160,20 @@ export function createGarden(
   };
   buildTree();
 
-  const falling = new FallingLeaves(FALL_CAPACITY, MOUND, createRng(777));
+  const falling = new FallingLeaves(
+    settings.fallingLeaves,
+    MOUND,
+    createRng(777),
+  );
 
   let season: Season = options.season ?? "spring";
+  let colors: Colors = { trees: options.trees, scene: options.scene };
   const lookOf = (next: Season) =>
-    lookFor(next, options.species.looks[next], options.scene);
+    lookFor(
+      next,
+      colors.trees?.[next] ?? options.species.looks[next],
+      typeof colors.scene === "function" ? colors.scene(next) : colors.scene,
+    );
   let current = lookOf(season);
   let incoming: Look | null = null;
   let wipe = 0;
@@ -186,18 +194,8 @@ export function createGarden(
   let cssHeight = 1;
   let offsetX = options.offsetX ?? 0;
 
-  const frameCamera = () => {
-    if (offsetX === 0) camera.clearViewOffset();
-    else
-      camera.setViewOffset(
-        cssWidth,
-        cssHeight,
-        -offsetX * cssWidth,
-        0,
-        cssWidth,
-        cssHeight,
-      );
-  };
+  const frameCamera = () => camera.perspective(fov, aspect, 0.1, 200, offsetX);
+  frameCamera();
   let overLeaves = false;
 
   const isGone = (i: number) =>
@@ -340,17 +338,14 @@ export function createGarden(
     limit: number,
   ) => falling.sweep(center, radius, push, limit, time, drop);
 
-  const raycaster = new Raycaster();
-  const pointer = new Vector2();
-
+  const ray = { origin: new Vector3(), direction: new Vector3(0, 0, -1) };
   const aim = (x: number, y: number) => {
-    pointer.set((x / cssWidth) * 2 - 1, -(y / cssHeight) * 2 + 1);
-    camera.updateMatrixWorld();
-    raycaster.setFromCamera(pointer, camera);
+    ray.origin.copy(camera.position);
+    ray.direction = camera.ray((x / cssWidth) * 2 - 1, 1 - (y / cssHeight) * 2);
   };
 
   const hitLeaf = (): Vector3 | null => {
-    const { origin, direction } = raycaster.ray;
+    const { origin, direction } = ray;
     const reach = 0.24;
     const reach2 = reach * reach;
     let nearest = Infinity;
@@ -371,7 +366,7 @@ export function createGarden(
   };
 
   const hitGround = (): Vector3 | null => {
-    const { origin, direction } = raycaster.ray;
+    const { origin, direction } = ray;
     if (direction.y > -0.01) return null;
     let y = 0;
     let point: Vector3 | null = null;
@@ -385,9 +380,10 @@ export function createGarden(
   };
 
   const screenDirection = (dx: number, dy: number, fallback: Vector3) => {
-    const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-    const dir = right.multiplyScalar(dx).addScaledVector(up, -dy);
+    const dir = camera.right
+      .clone()
+      .multiplyScalar(dx)
+      .addScaledVector(camera.up, -dy);
     if (dir.lengthSq() < 1e-6) dir.copy(fallback);
     return dir.normalize().addScaledVector(fallback, 0.35).normalize();
   };
@@ -414,7 +410,7 @@ export function createGarden(
         const push = screenDirection(
           dx,
           dy,
-          raycaster.ray.direction.clone().setY(0).normalize(),
+          ray.direction.clone().setY(0).normalize(),
         );
         push.y = 0;
         push.normalize().multiplyScalar(Math.min(2.6, speed / 600));
@@ -425,8 +421,8 @@ export function createGarden(
     if (time - lastKnock < 0.05 && hit.distanceTo(lastKnockAt) < 0.35) return;
     lastKnock = time;
     lastKnockAt.copy(hit);
-    const push = screenDirection(dx, dy, raycaster.ray.direction);
-    const count = 6 * MathUtils.clamp(speed / 500, 0.7, 3);
+    const push = screenDirection(dx, dy, ray.direction);
+    const count = 6 * clamp(speed / 500, 0.7, 3);
     knock(
       hit,
       0.75,
@@ -452,7 +448,7 @@ export function createGarden(
     }
     const center = hit ?? tree.crown.clone();
     const facing = hit
-      ? raycaster.ray.direction.clone()
+      ? ray.direction.clone()
       : tree.crown.clone().sub(camera.position).normalize();
     knock(
       center,
@@ -484,6 +480,13 @@ export function createGarden(
       spawnAmbient(AMBIENT_PER_SECOND * AMBIENT_WARMUP, AMBIENT_WARMUP);
   };
 
+  const setColors = (next: Colors) => {
+    colors = next;
+    if (incoming) current = incoming;
+    incoming = lookOf(season);
+    wipe = 0;
+  };
+
   const update = (dt: number) => {
     time += dt;
     if (!dragging) {
@@ -494,10 +497,7 @@ export function createGarden(
     if (blowing) {
       blow += dt / BLOW_TIME;
       blowAmount = Math.min(1, blow);
-      grow = Math.max(
-        0,
-        1 - easeInOutCubic(MathUtils.clamp((blow - 0.3) / 0.62, 0, 1)),
-      );
+      grow = Math.max(0, 1 - easeInOutCubic(clamp((blow - 0.3) / 0.62, 0, 1)));
       if (blow >= 1) {
         blowing = false;
         buildTree();
@@ -518,7 +518,7 @@ export function createGarden(
     }
     fade = blowing
       ? Math.max(0, 1 - 2 * blow)
-      : MathUtils.clamp((growth - 0.7) / 0.3, 0, 1);
+      : clamp((growth - 0.7) / 0.3, 0, 1);
     if (incoming) {
       wipe += dt / WIPE_TIME;
       if (wipe >= 1) {
@@ -536,17 +536,17 @@ export function createGarden(
   };
 
   const placeCameras = () => {
-    const turn = MathUtils.degToRad(spin);
-    const tilt = MathUtils.degToRad(TILT + tiltOffset);
+    const turn = radians(spin);
+    const tilt = radians(TILT + tiltOffset);
     const height = Math.max(3.5, tree.bounds.max.y);
     const width = Math.max(
       tree.bounds.max.x - tree.bounds.min.x,
       tree.bounds.max.z - tree.bounds.min.z,
     );
-    const halfFov = MathUtils.degToRad(camera.fov) / 2;
+    const halfFov = fov / 2;
     const distance = Math.max(
       (1.75 * height + 1.4) / 2 / Math.tan(halfFov),
-      (1.65 * width + 2.4) / 2 / Math.tan(halfFov) / camera.aspect,
+      (1.65 * width + 2.4) / 2 / Math.tan(halfFov) / aspect,
       11,
     );
     const target = new Vector3(0, 0.46 * height, 0);
@@ -556,16 +556,14 @@ export function createGarden(
       Math.cos(turn) * Math.cos(tilt) * distance,
     );
     camera.lookAt(target);
-    camera.updateMatrixWorld();
 
     const sunDir = new Vector3(...SUN_DIR);
     const focus = new Vector3(0, 2.5, 0);
     sunCamera.position.copy(focus).addScaledVector(sunDir, 25);
     sunCamera.lookAt(focus);
-    sunCamera.updateMatrixWorld();
   };
 
-  const render = (target: GPUTextureView, encoder?: GPUCommandEncoder) => {
+  const render = (...target: Target) => {
     placeCameras();
     packCamera(camera, eyeData);
     packCamera(sunCamera, sunData);
@@ -576,17 +574,15 @@ export function createGarden(
     frame[FRAME.blow] = blowAmount;
     frame[FRAME.fade] = fade;
     frame[FRAME.wipe] = easeInOutCubic(Math.min(1, wipe));
-    const origin = new Vector3().project(camera);
-    frame[FRAME.origin] = 0.5 * origin.x + 0.5;
-    frame[FRAME.origin + 1] = 0.5 * origin.y + 0.5;
-    frame[FRAME.aspect] = camera.aspect;
+    frame[FRAME.origin] = 0.5 * (eyeData[12] / eyeData[15]) + 0.5;
+    frame[FRAME.origin + 1] = 0.5 * (eyeData[13] / eyeData[15]) + 0.5;
+    frame[FRAME.aspect] = aspect;
     if (goneDirty) {
       renderer.setGone(gone);
       goneDirty = false;
     }
     falling.flush(renderer.setFalling);
     renderer.render(
-      target,
       {
         frame,
         eye: eyeData,
@@ -595,7 +591,7 @@ export function createGarden(
         current,
         incoming,
       },
-      encoder,
+      ...target,
     );
   };
 
@@ -607,6 +603,7 @@ export function createGarden(
       return overLeaves;
     },
     setSeason,
+    setColors,
     newTree(nextSeed) {
       if (blowing) return;
       seed = nextSeed ?? 1 + Math.floor(Math.random() * 999);
@@ -616,13 +613,13 @@ export function createGarden(
         new Vector3(),
         60,
         new Vector3(windDir.x, 0, windDir.y).multiplyScalar(4.5),
-        FALL_CAPACITY,
+        settings.fallingLeaves,
       );
     },
     resize(width, height, pixelRatio) {
       cssWidth = width / pixelRatio;
       cssHeight = height / pixelRatio;
-      camera.aspect = width / height;
+      aspect = width / height;
       frameCamera();
       renderer.resize(width, height);
     },
@@ -662,11 +659,7 @@ export function createGarden(
       if (dragging) {
         spin -= 0.3 * dx;
         spinVelocity = -0.3 * dx;
-        tiltOffset = MathUtils.clamp(
-          tiltOffset + 0.15 * dy,
-          1 - TILT,
-          40 - TILT,
-        );
+        tiltOffset = clamp(tiltOffset + 0.15 * dy, 1 - TILT, 40 - TILT);
         return;
       }
       brush(x, y, dx, dy, seconds);

@@ -1,13 +1,4 @@
-import {
-  BufferGeometry,
-  Euler,
-  Float32BufferAttribute,
-  IcosahedronGeometry,
-  Matrix4,
-  Quaternion,
-  Vector3,
-  Vector4,
-} from "three";
+import { type Matrix, Vector3 } from "./math.ts";
 import type { Rng } from "./rng.ts";
 import { type Leaf, perpendicular, type Tree } from "./tree.ts";
 import { type MoundShape, moundHeight } from "./world.ts";
@@ -99,28 +90,102 @@ export function createLeafInstances(leaves: Leaf[]): Float32Array<ArrayBuffer> {
   return data;
 }
 
-function solidMesh(geometry: BufferGeometry): Mesh {
-  geometry.computeVertexNormals();
-  const position = geometry.getAttribute("position");
-  const normal = geometry.getAttribute("normal");
-  const vertices = new Float32Array(SOLID_FLOATS * position.count);
-  for (let i = 0; i < position.count; i++)
+/** Positions, 3 floats each, and the triangles that index them. Without indices, each 3 positions make a triangle. */
+function solidMesh(positions: Float32Array, indices?: number[]): Mesh {
+  const count = positions.length / 3;
+  const at = (i: number) =>
+    new Vector3(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
+  const normals = new Float32Array(positions.length);
+  const triangles = indices ?? Array.from({ length: count }, (_, i) => i);
+  for (let t = 0; t < triangles.length; t += 3) {
+    const [a, b, c] = [triangles[t], triangles[t + 1], triangles[t + 2]];
+    const pb = at(b);
+    const face = at(c).sub(pb).cross(at(a).sub(pb));
+    for (const v of [a, b, c]) {
+      normals[3 * v] += face.x;
+      normals[3 * v + 1] += face.y;
+      normals[3 * v + 2] += face.z;
+    }
+  }
+  const vertices = new Float32Array(SOLID_FLOATS * count);
+  for (let i = 0; i < count; i++) {
+    const n = new Vector3(
+      normals[3 * i],
+      normals[3 * i + 1],
+      normals[3 * i + 2],
+    ).normalize();
     vertices.set(
       [
-        position.getX(i),
-        position.getY(i),
-        position.getZ(i),
-        normal.getX(i),
-        normal.getY(i),
-        normal.getZ(i),
+        positions[3 * i],
+        positions[3 * i + 1],
+        positions[3 * i + 2],
+        n.x,
+        n.y,
+        n.z,
       ],
       SOLID_FLOATS * i,
     );
-  const index = geometry.getIndex();
-  return {
-    vertices,
-    indices: index ? new Uint32Array(index.array) : undefined,
-  };
+  }
+  return { vertices, indices: indices && new Uint32Array(indices) };
+}
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+// biome-ignore format: 4 vertices per row
+const ICOSAHEDRON_VERTICES = [
+  -1, PHI, 0, 1, PHI, 0, -1, -PHI, 0, 1, -PHI, 0,
+  0, -1, PHI, 0, 1, PHI, 0, -1, -PHI, 0, 1, -PHI,
+  PHI, 0, -1, PHI, 0, 1, -PHI, 0, -1, -PHI, 0, 1,
+];
+// biome-ignore format: 5 faces per row
+const ICOSAHEDRON_FACES = [
+  0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+  1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+  3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+  4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
+];
+
+// Adapted from three.js PolyhedronGeometry, so the stones keep their shape: https://github.com/mrdoob/three.js/blob/r186/src/geometries/PolyhedronGeometry.js
+function icosphere(detail: number): Float32Array {
+  const out: number[] = [];
+  const corner = (i: number) =>
+    new Vector3(
+      ICOSAHEDRON_VERTICES[3 * i],
+      ICOSAHEDRON_VERTICES[3 * i + 1],
+      ICOSAHEDRON_VERTICES[3 * i + 2],
+    );
+  const push = (v: Vector3) => out.push(v.x, v.y, v.z);
+  const cols = detail + 1;
+  for (let f = 0; f < ICOSAHEDRON_FACES.length; f += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => corner(ICOSAHEDRON_FACES[f + k]));
+    const v: Vector3[][] = [];
+    for (let i = 0; i <= cols; i++) {
+      const aj = a.clone().lerp(c, i / cols);
+      const bj = b.clone().lerp(c, i / cols);
+      const rows = cols - i;
+      v[i] = [];
+      for (let j = 0; j <= rows; j++)
+        v[i][j] = j === 0 && i === cols ? aj : aj.clone().lerp(bj, j / rows);
+    }
+    for (let i = 0; i < cols; i++)
+      for (let j = 0; j < 2 * (cols - i) - 1; j++) {
+        const k = Math.floor(j / 2);
+        if (j % 2 === 0) {
+          push(v[i][k + 1]);
+          push(v[i + 1][k]);
+          push(v[i][k]);
+        } else {
+          push(v[i][k + 1]);
+          push(v[i + 1][k + 1]);
+          push(v[i + 1][k]);
+        }
+      }
+  }
+  const positions = new Float32Array(out);
+  for (let i = 0; i < positions.length; i += 3)
+    new Vector3(positions[i], positions[i + 1], positions[i + 2])
+      .normalize()
+      .toArray(positions, i);
+  return positions;
 }
 
 export function createMoundMesh(mound: MoundShape): Mesh {
@@ -146,10 +211,7 @@ export function createMoundMesh(mound: MoundShape): Mesh {
       indices.push(a, a + 1, b, a + 1, b + 1, b);
     }
   }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  return solidMesh(geometry);
+  return solidMesh(new Float32Array(positions), indices);
 }
 
 export function scatterMoss(
@@ -182,8 +244,9 @@ export function scatterMoss(
 
 export interface Stone {
   mesh: Mesh;
-  model: Matrix4;
-  footprint: Vector4;
+  model: Matrix;
+  /** Center x and z, radius, and depth as a share of width. */
+  footprint: [number, number, number, number];
 }
 
 export function placeStones(
@@ -204,12 +267,11 @@ export function placeStones(
           ((i + 0.5) / count) * (Math.PI * 2 - 2.3) +
           (rng() - 0.5) * 0.35);
     const distance = mound.radius + (first ? 0.2 : 0.6 + 1.6 * rng());
-    const geometry = new IcosahedronGeometry(1, 4);
-    const position = geometry.getAttribute("position");
+    const positions = icosphere(4);
     const phase = 100 * rng();
     const v = new Vector3();
-    for (let k = 0; k < position.count; k++) {
-      v.fromBufferAttribute(position, k);
+    for (let k = 0; k < positions.length; k += 3) {
+      v.set(positions[k], positions[k + 1], positions[k + 2]);
       const lumps =
         Math.sin(2.1 * v.x + phase) *
         Math.sin(2.7 * v.y + 1.3 * phase) *
@@ -217,7 +279,7 @@ export function placeStones(
       const pits =
         Math.sin(5.3 * v.x + 2 * phase) * Math.sin(4.7 * v.z + phase);
       v.multiplyScalar(1 + 0.12 * lumps + 0.025 * pits);
-      position.setXYZ(k, v.x, v.y, v.z);
+      v.toArray(positions, k);
     }
     const height = size * (0.55 + 0.3 * rng());
     const scale = new Vector3(
@@ -228,19 +290,18 @@ export function placeStones(
     const rotationY = 6.28 * rng();
     const x = Math.cos(angle) * distance;
     const z = Math.sin(angle) * distance;
+    const cos = Math.cos(rotationY);
+    const sin = Math.sin(rotationY);
     stones.push({
-      mesh: solidMesh(geometry),
-      model: new Matrix4().compose(
-        new Vector3(x, 0.35 * height, z),
-        new Quaternion().setFromEuler(new Euler(0, rotationY, 0)),
-        scale,
-      ),
-      footprint: new Vector4(
-        x,
-        z,
-        0.95 * Math.max(scale.x, scale.z),
-        scale.z / scale.x,
-      ),
+      mesh: solidMesh(positions),
+      // biome-ignore format: one matrix column per row
+      model: [
+        cos * scale.x, 0, -sin * scale.x, 0,
+        0, scale.y, 0, 0,
+        sin * scale.z, 0, cos * scale.z, 0,
+        x, 0.35 * height, z, 1,
+      ],
+      footprint: [x, z, 0.95 * Math.max(scale.x, scale.z), scale.z / scale.x],
     });
   }
   return stones;

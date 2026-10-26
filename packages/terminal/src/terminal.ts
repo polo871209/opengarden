@@ -30,6 +30,7 @@ const MODE = {
 const MODES = Object.values(MODE);
 
 const ESC = "\x1b";
+const DRAIN_TIMEOUT_MS = 500;
 const MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
 const CSI = /^\x1b\[([\x30-\x3f]*)[\x20-\x2f]*([\x40-\x7e])/;
 const STRING = /^\x1b([_\]P])([\s\S]*?)(?:\x07|\x1b\\)/;
@@ -47,7 +48,7 @@ export function write(data: string): void {
   }
 }
 
-export function openTerminal(handlers: TerminalHandlers): () => void {
+export function openTerminal(handlers: TerminalHandlers): () => Promise<void> {
   const { stdin, stdout } = process;
   if (!stdin.isTTY || !stdout.isTTY)
     throw new Error("opengarden needs an interactive terminal");
@@ -55,6 +56,7 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
   let pending = "";
   let loneEscape: NodeJS.Timeout | undefined;
   let cell = { width: 0, height: 0 };
+  let onDrained: (() => void) | undefined;
 
   const report = (columns: number, rows: number) => {
     if (columns > 0 && rows > 0 && cell.width > 0 && cell.height > 0)
@@ -67,6 +69,10 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
   };
 
   const onCsi = (params: string, final: string) => {
+    if (onDrained) {
+      if (final === "c" && params.startsWith("?")) onDrained();
+      return;
+    }
     const values = params.split(";").map(Number);
     if (final === "t" && values[0] === 48) {
       const [, rows, columns, height, width] = values;
@@ -85,7 +91,7 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
     if (pending[0] !== ESC) {
       const key = String.fromCodePoint(pending.codePointAt(0) ?? 0);
       pending = pending.slice(key.length);
-      handlers.key(key);
+      if (!onDrained) handlers.key(key);
       return true;
     }
     const mouse = MOUSE.exec(pending);
@@ -94,7 +100,7 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
       const code = Number(mouse[1]);
       const action: MouseAction =
         mouse[4] === "m" ? "release" : code & 32 ? "move" : "press";
-      if (!(code & 64))
+      if (!(code & 64) && !onDrained)
         handlers.mouse(
           action,
           code & 3,
@@ -112,7 +118,7 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
     const string = STRING.exec(pending);
     if (string) {
       pending = pending.slice(string[0].length);
-      if (string[1] === "_" && string[2].startsWith("G"))
+      if (string[1] === "_" && string[2].startsWith("G") && !onDrained)
         handlers.graphics(string[2].slice(1));
       return true;
     }
@@ -128,7 +134,7 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
     if (pending === ESC)
       loneEscape = setTimeout(() => {
         pending = "";
-        handlers.key(ESC);
+        if (!onDrained) handlers.key(ESC);
       }, 50);
   };
 
@@ -142,17 +148,32 @@ export function openTerminal(handlers: TerminalHandlers): () => void {
     `${MODES.map((mode) => `${ESC}[?${mode}h`).join("")}${ESC}[?25l${ESC}[16t`,
   );
 
-  return () => {
-    clearTimeout(loneEscape);
-    stdin.off("data", onData);
-    stdout.off("resize", onResize);
-    write(
-      `${[...MODES]
-        .reverse()
-        .map((mode) => `${ESC}[?${mode}l`)
-        .join("")}${ESC}]111${ESC}\\${ESC}]22;${ESC}\\${ESC}[?25h`,
-    );
-    stdin.setRawMode(false);
-    stdin.pause();
-  };
+  // A reply that arrives after raw mode ends shows up in the shell, so wait for the answer to a final DA1 query.
+  return () =>
+    new Promise<void>((done) => {
+      stdout.off("resize", onResize);
+      const finish = () => {
+        clearTimeout(timer);
+        clearTimeout(loneEscape);
+        stdin.off("data", onData);
+        try {
+          stdin.setRawMode(false);
+          stdin.pause();
+        } finally {
+          done();
+        }
+      };
+      const timer = setTimeout(finish, DRAIN_TIMEOUT_MS);
+      onDrained = finish;
+      try {
+        write(
+          `${[...MODES]
+            .reverse()
+            .map((mode) => `${ESC}[?${mode}l`)
+            .join("")}${ESC}]111${ESC}\\${ESC}]22;${ESC}\\${ESC}[?25h${ESC}[c`,
+        );
+      } catch {
+        finish();
+      }
+    });
 }

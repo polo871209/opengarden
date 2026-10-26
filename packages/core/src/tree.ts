@@ -1,5 +1,5 @@
-import { Box3, Vector3 } from "three";
 import type { Season, TreeLook } from "./look.ts";
+import { Vector3 } from "./math.ts";
 import { createRng, type Rng } from "./rng.ts";
 
 /** A kind of tree: how it grows, and how it looks in each season. */
@@ -31,7 +31,7 @@ export interface Leaf {
 export interface Tree {
   branches: Branch[];
   leaves: Leaf[];
-  bounds: Box3;
+  bounds: { min: Vector3; max: Vector3 };
   crown: Vector3;
 }
 
@@ -242,10 +242,20 @@ export function tip(branch: Branch): Station {
   };
 }
 
-export function growTree(species: Species, seed: number): Tree {
+/** Grows a tree and keeps a `leafDensity` share of its leaves, so the branches stay the same at any density. */
+export function growTree(
+  species: Species,
+  seed: number,
+  leafDensity = 1,
+): Tree {
   const builder = new TreeBuilder(createRng(Math.imul(0x9e3779b1, seed)));
   species.grow(builder);
-  const { branches, leaves } = builder;
+  const { branches } = builder;
+  const keep = createRng(Math.imul(0x85ebca6b, seed) + 1);
+  const leaves =
+    leafDensity < 1
+      ? builder.leaves.filter(() => keep() < leafDensity)
+      : builder.leaves;
 
   let reach = 0;
   for (const branch of branches)
@@ -256,16 +266,31 @@ export function growTree(species: Species, seed: number): Tree {
     branch.arrival = branch.arrival.map((a) => a * scale);
   for (const leaf of leaves) leaf.arrival *= scale;
 
-  const bounds = new Box3();
-  for (const leaf of leaves) bounds.expandByPoint(leaf.position);
+  const bounds = {
+    min: new Vector3(Infinity, Infinity, Infinity),
+    max: new Vector3(-Infinity, -Infinity, -Infinity),
+  };
+  const expand = (p: Vector3) => {
+    bounds.min.set(
+      Math.min(bounds.min.x, p.x),
+      Math.min(bounds.min.y, p.y),
+      Math.min(bounds.min.z, p.z),
+    );
+    bounds.max.set(
+      Math.max(bounds.max.x, p.x),
+      Math.max(bounds.max.y, p.y),
+      Math.max(bounds.max.z, p.z),
+    );
+  };
+  for (const leaf of leaves) expand(leaf.position);
   for (const branch of branches)
-    for (const point of branch.points) bounds.expandByPoint(point);
+    for (const point of branch.points) expand(point);
 
   const crown = new Vector3();
   for (const leaf of leaves) crown.add(leaf.position);
   crown.multiplyScalar(1 / Math.max(1, leaves.length));
 
-  const half = bounds.getSize(new Vector3()).multiplyScalar(0.5);
+  const half = bounds.max.clone().sub(bounds.min).multiplyScalar(0.5);
   for (const leaf of leaves) {
     const outward = leaf.position.clone().sub(crown);
     outward.x /= Math.max(0.3, half.x);

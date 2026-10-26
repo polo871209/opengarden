@@ -14,6 +14,7 @@ Options:
   --season <name>      start in ${SEASONS.join(", ")}
   --controls           show the hint and the season and new tree buttons
   --pixel-ratio <n>    rendered pixels per screen pixel, above 0 and at most 2 (default 1)
+  --fps <n>            frames per second, a whole number from 1 to 120 (default 60)
   --log <file>         append events and frame stats to this file
   -h, --help           show this help
 
@@ -26,6 +27,7 @@ const { values: args } = parseArgs({
     season: { type: "string" },
     controls: { type: "boolean" },
     "pixel-ratio": { type: "string", default: "1" },
+    fps: { type: "string" },
     log: { type: "string" },
     help: { type: "boolean", short: "h" },
   },
@@ -50,6 +52,7 @@ try {
     season,
     controls: args.controls,
     pixelRatio: Number(args["pixel-ratio"]),
+    fps: args.fps === undefined ? undefined : Number(args.fps),
     log: logFile
       ? (line) =>
           appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`)
