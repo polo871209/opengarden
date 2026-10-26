@@ -21,7 +21,9 @@ export interface TreeLook {
   barkShade: string;
 }
 
-interface SceneColors {
+/** The colors around the tree in one season. Colors are `#rrggbb`. */
+export interface SceneColors {
+  /** Also the color behind the garden. */
   ground: string;
   gravel: string;
   rake: string;
@@ -121,8 +123,12 @@ function hexToVector(hex: string): Vector3 {
   );
 }
 
-export function lookFor(season: Season, tree: TreeLook): Look {
-  const scene = SCENE[season];
+export function lookFor(
+  season: Season,
+  tree: TreeLook,
+  sceneOverride: Partial<SceneColors> = {},
+): Look {
+  const scene = { ...SCENE[season], ...sceneOverride };
   const crown = tree.crown.map(hexToVector);
   const mossLight = hexToVector(scene.mossLight);
   const isAutumn = season === "autumn";

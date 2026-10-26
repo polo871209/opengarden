@@ -1,6 +1,6 @@
 {
   "name": "@opengardenjs/terminal",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Runs an opengarden tree in a terminal through Dawn and the Kitty graphics protocol.",
   "keywords": [
     "opengarden",

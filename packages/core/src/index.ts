@@ -7,7 +7,13 @@ export {
 } from "./atlas.ts";
 export { CONTROLS } from "./controls.ts";
 export { createGarden, type Garden, type GardenOptions } from "./garden.ts";
-export { type LeafShape, SEASONS, type Season, type TreeLook } from "./look.ts";
+export {
+  type LeafShape,
+  type SceneColors,
+  SEASONS,
+  type Season,
+  type TreeLook,
+} from "./look.ts";
 export type { Image } from "./renderer.ts";
 export type { Rng } from "./rng.ts";
 export {

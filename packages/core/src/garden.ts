@@ -10,7 +10,7 @@ import {
   WebGPUCoordinateSystem,
 } from "three";
 import { FallingLeaves, type FallKind } from "./falling.ts";
-import { type Look, lookFor, type Season } from "./look.ts";
+import { type Look, lookFor, type SceneColors, type Season } from "./look.ts";
 import {
   createBarkMesh,
   createLeafInstances,
@@ -49,6 +49,10 @@ export interface GardenOptions {
   season?: Season;
   /** The leaf shapes that `paintLeafAtlas` paints. */
   atlas: Image;
+  /** Replaces these scene colors in every season. */
+  scene?: Partial<SceneColors>;
+  /** Moves the tree right by this share of the image width. Negative moves it left. Defaults to 0. */
+  offsetX?: number;
 }
 
 /**
@@ -63,6 +67,8 @@ export interface Garden {
   newTree(seed?: number): void;
   /** Sets the size of the render target, and how many of its pixels make one CSS pixel. */
   resize(width: number, height: number, pixelRatio: number): void;
+  /** Moves the tree right by this share of the image width. Negative moves it left. */
+  setOffsetX(share: number): void;
   /** Moves time forward by one step of `seconds`. */
   update(seconds: number): void;
   /** Moves time forward by `seconds`, in steps of at most 1/60 second. */
@@ -158,7 +164,8 @@ export function createGarden(
   const falling = new FallingLeaves(FALL_CAPACITY, MOUND, createRng(777));
 
   let season: Season = options.season ?? "spring";
-  const lookOf = (next: Season) => lookFor(next, options.species.looks[next]);
+  const lookOf = (next: Season) =>
+    lookFor(next, options.species.looks[next], options.scene);
   let current = lookOf(season);
   let incoming: Look | null = null;
   let wipe = 0;
@@ -177,6 +184,20 @@ export function createGarden(
   let tiltOffset = 0;
   let cssWidth = 1;
   let cssHeight = 1;
+  let offsetX = options.offsetX ?? 0;
+
+  const frameCamera = () => {
+    if (offsetX === 0) camera.clearViewOffset();
+    else
+      camera.setViewOffset(
+        cssWidth,
+        cssHeight,
+        -offsetX * cssWidth,
+        0,
+        cssWidth,
+        cssHeight,
+      );
+  };
   let overLeaves = false;
 
   const isGone = (i: number) =>
@@ -602,8 +623,12 @@ export function createGarden(
       cssWidth = width / pixelRatio;
       cssHeight = height / pixelRatio;
       camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+      frameCamera();
       renderer.resize(width, height);
+    },
+    setOffsetX(share) {
+      offsetX = share;
+      frameCamera();
     },
     update,
     advance(seconds) {

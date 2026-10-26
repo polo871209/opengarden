@@ -3,6 +3,7 @@ import {
   ATLAS_WIDTH,
   createGarden,
   paintLeafAtlas,
+  type SceneColors,
   type Season,
   type Species,
 } from "@opengardenjs/core";
@@ -14,11 +15,17 @@ export interface MountOptions {
   season?: Season;
   /** Shows the hint and the season and new tree buttons. Defaults to false. */
   controls?: boolean;
+  /** Replaces these scene colors in every season. `ground` is also the color behind the garden. */
+  scene?: Partial<SceneColors>;
+  /** Moves the tree right by this share of the canvas width. Negative moves it left. Defaults to 0. */
+  offsetX?: number;
 }
 
 /** A garden that runs in a canvas inside the host element. */
 export interface MountedGarden {
   setSeason(season: Season): void;
+  /** Moves the tree right by this share of the canvas width. Negative moves it left. */
+  setOffsetX(share: number): void;
   /** Blows the tree away and grows a new one from `seed`, or from a random seed. */
   newTree(seed?: number): void;
   /** Stops the garden and removes its canvas and buttons. */
@@ -72,6 +79,8 @@ export async function mountGarden(
     seed: options.seed,
     season: options.season,
     atlas: paintAtlas(),
+    scene: options.scene,
+    offsetX: options.offsetX,
   });
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
@@ -145,6 +154,7 @@ export async function mountGarden(
 
   return {
     setSeason,
+    setOffsetX: (share) => garden.setOffsetX(share),
     newTree: (seed) => garden.newTree(seed),
     dispose() {
       cancelAnimationFrame(frame);
