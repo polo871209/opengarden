@@ -1,6 +1,6 @@
 {
   "name": "@opengardenjs/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mounts an opengarden tree in a web page.",
   "keywords": [
     "opengarden",
